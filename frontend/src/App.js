@@ -1,16 +1,3 @@
-// import React from 'react';
-// import GeminiForm from './GeminiForm';
-
-// function App() {
-//   return (
-//     <div className="App">
-//       <h1>AI Content Generator with Gemini API</h1>
-//       <GeminiForm />
-//     </div>
-//   );
-// }
-
-// export default App;
 import React, { useState } from "react";
 import axios from "axios";
 import './App.css';
@@ -19,19 +6,17 @@ function App() {
   const [file, setFile] = useState(null);
   const [query, setQuery] = useState('');
   const [responseData, setResponseData] = useState(null);
+  const [searchResults, setSearchResults] = useState([]);
   const [errorMessage, setErrorMessage] = useState('');
 
-  // Handle file input
   const handleFileChange = (event) => {
     setFile(event.target.files[0]);
   };
 
-  // Handle query input
   const handleQueryChange = (event) => {
     setQuery(event.target.value);
   };
 
-  // Handle form submission (send file and query to Flask backend)
   const handleSubmit = async (event) => {
     event.preventDefault();
     
@@ -50,7 +35,8 @@ function App() {
           'Content-Type': 'multipart/form-data',
         },
       });
-      setResponseData(response.data.response);
+
+      setSearchResults(response.data.responses); // Set search results
       setErrorMessage('');
     } catch (error) {
       setErrorMessage("Error calling the backend: " + (error.response?.data?.error || error.message));
@@ -59,7 +45,7 @@ function App() {
 
   return (
     <div className="App">
-      <h1>Gemini API Integration</h1>
+      <h1>Gemini API & Web Search Integration</h1>
       <form onSubmit={handleSubmit}>
         <div>
           <label>Upload CSV File:</label>
@@ -79,10 +65,16 @@ function App() {
 
       {errorMessage && <div className="error">{errorMessage}</div>}
 
-      {responseData && (
+      {searchResults.length > 0 && (
         <div>
-          <h3>Response:</h3>
-          <pre>{responseData}</pre>
+          <h3>Extracted Information:</h3>
+          {searchResults.map((result, index) => (
+            <div key={index}>
+              <h4>Entity {index + 1}:</h4>
+              <p><strong>Emails:</strong> {result.emails.join(', ')}</p>
+              <p><strong>Phone Numbers:</strong> {result.phone_numbers.join(', ')}</p>
+            </div>
+          ))}
         </div>
       )}
     </div>

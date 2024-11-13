@@ -1,69 +1,126 @@
 import os
+import requests
+import re
 from flask import Flask, request, jsonify
-from flask_cors import CORS  # Importing CORS
+from flask_cors import CORS
 import google.generativeai as genai
-from requests.exceptions import RequestException  # For catching network-related errors
+from requests.exceptions import RequestException
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
 load_dotenv()
 
-# Initialize the Flask app
+# Initialize Flask app
 app = Flask(__name__)
+CORS(app)
 
-# Enable CORS for all routes
-CORS(app)  # This enables CORS for your app
-
-print("Starting server...")
-
-# Configure Gemini API key from environment variable
+# Configure Gemini API key
 genai.configure(api_key=os.environ["GEMINI_API_KEY"])
 
-# Define a route for the API to call Gemini
+# SerpAPI configurations (replace with your SerpAPI key)
+SERPAPI_KEY = os.environ["SERPAPI_API_KEY"]
+SERPAPI_URL = "https://serpapi.com/search"
+
 @app.route('/api/gemini', methods=['POST'])
 def generate_content():
     try:
-        # Extract file and query data from the form data
-        file = request.files.get('file')  # Get the file from the form data
-        query = request.form.get('query')  # Get the query from the form data
+        # Extract file and query data
+        file = request.files.get('file')
+        query = request.form.get('query')
 
         if not file or not query:
-            return jsonify({"error": "File or query is missing"}), 400  # Bad request if file or query is missing
+            return jsonify({"error": "File or query is missing"}), 400
 
-        # Handle the uploaded file (For example, assuming it's a CSV)
-        file_data = file.read().decode('utf-8')  # Read file contents as string (for simplicity)
+        # Read the file content (e.g., CSV)
+        file_data = file.read().decode('utf-8')
 
-        # Create the Gemini model and generate content using the query and file data
-        model = genai.GenerativeModel("gemini-1.5-flash")
-        response = model.generate_content(f"{query} from the following data: {file_data}")
+        # Parse file data (simplified for now, you can expand this for CSV parsing)
+        entities = file_data.splitlines()
 
-        # Return the generated content
-        return jsonify({"response": response.text})
+        # Loop through the entities (e.g., company names)
+        search_results = []
+        for entity in entities:
+            search_query = query.format(entity=entity)
+            search_results.append(fetch_search_results(search_query))
+
+        # Process the search results with Gemini API
+        responses = []
+        for result in search_results:
+            response = generate_with_gemini(result)
+            responses.append(response)
+
+        return jsonify({"responses": responses})
 
     except RequestException as e:
-        # Handle network-related errors (e.g., issues with reaching Gemini API)
-        return jsonify({"error": f"Network error: {str(e)}"}), 503  # Service Unavailable (503) for network issues
+        return jsonify({"error": f"Network error: {str(e)}"}), 503
 
     except Exception as e:
-        # Handle other errors (e.g., invalid API usage, unexpected issues)
-        return jsonify({"error": f"An error occurred: {str(e)}"}), 500  # Internal Server Error (500) for generic issues
+        return jsonify({"error": f"An error occurred: {str(e)}"}), 500
 
-# Error handling for connection issues to Flask server
-@app.errorhandler(500)
-def internal_server_error(error):
-    return jsonify({"error": "Internal server error, please try again later."}), 500
 
-@app.errorhandler(404)
-def not_found(error):
-    return jsonify({"error": "Endpoint not found."}), 404
+def fetch_search_results(query):
+    """Fetch search results using SerpAPI and filter them"""
+    params = {
+        'q': query,
+        'api_key': SERPAPI_KEY,
+        'engine': 'google',
+    }
+    try:
+        response = requests.get(SERPAPI_URL, params=params)
+        response.raise_for_status()  # Raise an error for bad status codes
+        results = response.json().get('organic_results', [])
+        filtered_results = filter_search_results(results)
+        return filtered_results
+    except requests.exceptions.RequestException as e:
+        return {"error": f"Error fetching search results: {str(e)}"}
 
-@app.errorhandler(400)
-def bad_request(error):
-    return jsonify({"error": "Bad request, invalid or missing data."}), 400
+
+def filter_search_results(results):
+    """Filter and clean up search results"""
+    filtered = []
+    for result in results:
+        title = result.get("title", "")
+        snippet = result.get("snippet", "")
+        link = result.get("link", "")
+        
+        # Only add results with a valid URL and relevant content
+        if link and snippet:
+            filtered.append({
+                "title": title,
+                "snippet": snippet,
+                "url": link
+            })
+    return filtered
+
+
+def generate_with_gemini(search_results):
+    """Generate content using Gemini API and process extracted data"""
+    try:
+        # Combine the search results into a readable prompt for Gemini
+        results_text = "\n".join([f"Title: {r['title']}\nSnippet: {r['snippet']}\nURL: {r['url']}" for r in search_results])
+
+        # Structure the prompt to instruct Gemini on extracting data like emails or phone numbers
+        prompt = f"Extract the following information from the search results:\n{results_text}\n\nInformation to extract: email addresses, phone numbers, and other contact information."
+
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        response = model.generate_content(prompt)
+        
+        # Here we can use regular expressions to process the raw text further
+        extracted_info = extract_contact_info(response.text)
+
+        return extracted_info
+    except Exception as e:
+        return f"Error processing with Gemini: {str(e)}"
+
+
+def extract_contact_info(text):
+    """Use regex to extract email addresses and phone numbers from text"""
+    emails = re.findall(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", text)
+    phone_numbers = re.findall(r"\+?\(?\d{1,4}\)?[-.\s]?\d{1,4}[-.\s]?\d{1,4}[-.\s]?\d{1,9}", text)
+
+    return {
+        "emails": emails,
+        "phone_numbers": phone_numbers
+    }
 
 if __name__ == "__main__":
-    try:
-        app.run(debug=True)
-    except Exception as e:
-        print(f"Error starting server: {e}")
-        # Here you could log the error or take other actions to alert the user
+    app.run(debug=True)
