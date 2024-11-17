@@ -1,4 +1,4 @@
-![ai-agent-logo](<.\frontend\public\logo192.png>)
+![ai-agent-logo](logo192.png)
 
 # AI Based Web-Scraping Agent
 
