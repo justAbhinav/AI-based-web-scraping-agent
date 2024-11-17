@@ -12,8 +12,12 @@ import {
   FormControl,
   TextField,
   FormHelperText,
+  Button,
+  Divider,
 } from "@mui/material";
+import DownloadIcon from "@mui/icons-material/Download";
 import FileDisplay from "./fileDisplay";
+import Footer from './footer';
 import "./App.css";
 
 function App() {
@@ -26,6 +30,7 @@ function App() {
   const [uploadError, setUploadError] = useState("");
   const [uploadStatus, setUploadStatus] = useState("");
   const [fileContent, setFileContent] = useState([]);
+  const [loading, setLoading] = useState(false);
 
   const handleFileChange = (event) => {
     const uploadedFile = event.target.files[0];
@@ -88,6 +93,7 @@ function App() {
     formData.append("query", query);
     formData.append("selectedColumn", selectedColumn);
 
+    setLoading(true);
     try {
       const response = await axios.post(
         "http://127.0.0.1:5000/api/gemini",
@@ -105,29 +111,60 @@ function App() {
         "Error communicating with backend: " +
           (error.response?.data?.error || error.message)
       );
+    } finally {
+      setLoading(false);
     }
   };
 
+  const convertToCSV = (data) => {
+    if (data.length === 0) return "";
+
+    const headers = Object.keys(data[0]);
+
+    const rows = data.map((row) =>
+      headers
+        .map((header) => {
+          let value = row[header] || ""; // Ensure no undefined values
+          value = value.toString().replace(/[\r\n,]+/g, " "); // Replace commas and newlines with a space
+          return `"${value}"`; // Wrap in double quotes
+        })
+        .join(",")
+    );
+
+    return [headers.join(","), ...rows].join("\n");
+  };
+
+  const downloadCSV = () => {
+    if (results.length === 0) {
+      alert("No data available to download");
+      return;
+    }
+
+    const csv = convertToCSV(results);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "extracted_information.csv";
+    link.click();
+  };
+
   return (
-    <div className="body">
+    <>
+    <div className="app-wrapper" >
       <Container maxWidth="lg">
         <Box sx={{ my: 5 }}>
           <div className="App">
             <Typography
-              variant="h4"
-              component="h5"
+              variant="h3"
               align="center"
               paddingBottom={"0.5rem"}
+              fontWeight={"bold"}
             >
               AI Agent based data processing
             </Typography>
-            <Typography
-              variant="body2"
-              component="h6"
-              align="center"
-              paddingBottom={"1rem"}
-            >
-              Extract emails, phone numbers, and additional info from a CSV file
+            <Typography variant="body2" align="center" paddingBottom={"1rem"}>
+              Explore the net and extract information all this just by a CSV
+              file and a prompt
             </Typography>
           </div>
         </Box>
@@ -161,14 +198,22 @@ function App() {
 
       <div className="file-content-container-div">
         <Container maxWidth="lg">
-        
           {fileContent.length > 0 && (
             <div>
+              <Divider
+                variant="middle"
+                sx={{
+                  borderColor: "whitesmoke",
+                  borderWidth: "2px",
+                  opacity: "0.5",
+                }}
+              />
               <Typography
                 variant="h8"
                 component="h3"
                 align="center"
                 fontFamily={"Montserrat"}
+                marginTop={"1rem"}
               >
                 Uploaded file: {file.name}
               </Typography>
@@ -195,12 +240,20 @@ function App() {
               </div>
             </div>
           )}
-          </Container>
-        </div>
-      
+        </Container>
+      </div>
 
       {columns.length > 0 && (
         <form onSubmit={handleSubmit}>
+          <Divider
+            variant="middle"
+            sx={{
+              borderColor: "whitesmoke",
+              borderWidth: "1px",
+              opacity: "0.3",
+              marginBottom: "1.5rem",
+            }}
+          />
           <Container maxWidth="sm" className="container_process_req">
             <Box sx={{ my: 2 }}>
               <FormControl>
@@ -217,7 +270,7 @@ function App() {
                 </InputLabel>
                 <Select
                   labelId="select-column-label"
-                  id="select-column"
+                  id="select-main-column"
                   value={selectedColumn}
                   label="Select a Column"
                   onChange={handleColumnChange}
@@ -241,6 +294,7 @@ function App() {
                       borderColor: "whitesmoke", // Change the border color when focused
                     },
                   }}
+                  disabled={loading}
                 >
                   {columns.map((col, index) => (
                     <MenuItem key={index} value={col}>
@@ -265,7 +319,7 @@ function App() {
                 </InputLabel>
 
                 <TextField
-                  id="outlined-basic"
+                  id="input-query-box"
                   label="type your query here"
                   variant="outlined"
                   value={query}
@@ -291,11 +345,12 @@ function App() {
                       },
                     },
                   }}
+                  disabled={loading}
                 />
                 <FormHelperText
                   sx={{ color: "whitesmoke", marginBottom: "1rem" }}
                 >
-                  e.g. What is the valuation of the companies
+                  e.g. What is the ceo of the companies
                 </FormHelperText>
               </div>
               {fileContent.length > 26 && (
@@ -307,43 +362,69 @@ function App() {
                   fontFamily={"Montserrat"}
                   marginBottom={"1rem"}
                 >
-                  Due to rate limitations, only the first 25 entries will be processed.
+                  Due to rate limitations, only the first 25 entries will be
+                  processed.
                 </Typography>
               )}
-              <button type="submit" className="upload-button">
+              <button
+                type="submit"
+                className="upload-button"
+                disabled={loading}
+              >
                 Process
               </button>
-              
-              {error && <div className="error" style={{ color: "red" }}>{error}</div>}
+
+              {error && (
+                <div className="error" style={{ color: "red" }}>
+                  {error}
+                </div>
+              )}
             </Box>
           </Container>
         </form>
       )}
 
+      <Divider
+        variant="middle"
+        sx={{
+          borderColor: "whitesmoke",
+          borderWidth: "2px",
+          opacity: "0.5",
+          marginBottom: "0.5rem",
+          marginTop: "2.5rem",
+        }}
+      />
+
       <div className="Result-display">
-      {results.length > 0 && (
-        <div className="">
-          <h3>Results:</h3>
-          {results.map((result, index) => (
-            <div key={index}>
-              <h4>Entity {index + 1}</h4>
-              <p>
-                <strong>Extracted Information: </strong> {result.info || "N/A"}
-              </p>
-              {/* <p>
-                <strong>Phone Numbers:</strong>{" "}
-                {result.phone_numbers?.join(", ") || "N/A"}
-              </p>
-              <p>
-                <strong>Additional Info:</strong>{" "}
-                {result.additional_info || "N/A"}
-              </p> */}
-            </div>
-          ))}
-        </div>
-      )}
+        {results.length > 0 && (
+          <div className="">
+            <h3>Results:</h3>
+            {results.map((result, index) => (
+              <div key={index}>
+                <h4>
+                  Entity {index + 1}: {result.entity || "N/A"}
+                </h4>
+                <p>
+                  <strong>Extracted Information: </strong>{" "}
+                  {result.info || "N/A"}
+                </p>
+              </div>
+            ))}
+            <Button
+              className="download-button"
+              size="small"
+              variant="contained"
+              startIcon={<DownloadIcon />}
+              onClick={downloadCSV}
+            >
+              Download this Data
+            </Button>
+          </div>
+        )}
       </div>
     </div>
+          <Footer/>
+          </>
   );
 }
 

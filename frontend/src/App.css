@@ -1,50 +1,44 @@
 @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap');
 
+html, body{
+  height: 100%;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+}
+
 body{
   background-color: #121212;
   color: #ffffff;
   font-family: "Montserrat", sans-serif;
-}
-
-.App {
-  text-align: center;
-}
-
-/* 
-.App-logo {
-  height: 40vmin;
-  pointer-events: none;
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .App-logo {
-    animation: App-logo-spin infinite 20s linear;
-  }
-} */
-
-/* .App-header {
-  background-color: #282c34;
-  min-height: 100vh;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  font-size: calc(10px + 2vmin);
-  color: white;
 }
 
-.App-link {
-  color: #61dafb;
+.app-wrapper {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1; /* Ensures the content takes all the available space */
+}
+.App {
+  text-align: center;
+  flex: 1;
 }
 
-@keyframes App-logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-} */
+.app-wrapper {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1; /* Ensures the content takes all the available space */
+}
 
 .container {
   display: flex;
@@ -66,9 +60,8 @@ body{
   align-items: center;
   justify-content: center;
   text-align: center;
-  margin: 0.5rem;
-  padding: 1rem;
   width: 100%;
+  margin-bottom: 2rem;
 }
 
 .file-content-table-view{
@@ -96,6 +89,26 @@ button.upload-button {
 
 button.upload-button:hover {
   background: linear-gradient(45deg, #2575fc 30%, #6a11cb 90%);
+}
+
+button.upload-button:disabled {
+  background: linear-gradient(45deg, #2574fc4f 30%, #6b11cb61 90%);
+  cursor: not-allowed;
+}
+
+.download-button{
+  background: linear-gradient(45deg, #6a11cb 30%, #2575fc 90%);
+  border: none;
+  color: white;
+  padding: 10px 20px;
+  text-align: center;
+  text-decoration: none;
+  display: inline-block;
+  font-size: 16px;
+  margin: 10px 2px;
+  cursor: pointer;
+  border-radius: 4px;
+  box-shadow:  0 0 10px #141939;
 }
 
 .container_process_req{
@@ -129,4 +142,21 @@ button.upload-button:hover {
   justify-content: center;
   width: 30rem;
   color: #ffffff;
+  margin-left: 2rem;
+  margin-bottom: 2rem;
+}
+
+#input-query-box:disabled {
+  cursor: not-allowed;
+}
+
+#select-main-column:disabled {
+  cursor: not-allowed;
+}
+
+footer {
+  margin-top: auto; 
+  text-align: center;
+  position: relative;
+  width: 100%;
 }
