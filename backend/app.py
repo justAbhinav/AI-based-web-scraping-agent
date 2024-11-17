@@ -1,126 +1,131 @@
 import os
-import requests
 import re
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+import requests
+from bs4 import BeautifulSoup
 import google.generativeai as genai
-from requests.exceptions import RequestException
 from dotenv import load_dotenv
+import random
+import time
 
 load_dotenv()
 
-# Initialize Flask app
 app = Flask(__name__)
 CORS(app)
 
-# Configure Gemini API key
-genai.configure(api_key=os.environ["GEMINI_API_KEY"])
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
-# SerpAPI configurations (replace with your SerpAPI key)
-SERPAPI_KEY = os.environ["SERPAPI_API_KEY"]
-SERPAPI_URL = "https://serpapi.com/search"
-
-@app.route('/api/gemini', methods=['POST'])
-def generate_content():
+@app.route("/api/gemini", methods=["POST"])
+def process_request():
+    print("Processing request...")
     try:
-        # Extract file and query data
-        file = request.files.get('file')
-        query = request.form.get('query')
+        file = request.files.get("file")
+        query_template = request.form.get("query")
+        selected_column = request.form.get("selectedColumn")
 
-        if not file or not query:
-            return jsonify({"error": "File or query is missing"}), 400
+        if not file or not query_template or not selected_column:
+            return jsonify({"error": "Missing file, query template, or selected column."}), 400
 
-        # Read the file content (e.g., CSV)
-        file_data = file.read().decode('utf-8')
+        # Read CSV file and extract the selected column
+        import pandas as pd
+        data = pd.read_csv(file)
+        if selected_column not in data.columns:
+            return jsonify({"error": "Selected column not found in file."}), 400
 
-        # Parse file data (simplified for now, you can expand this for CSV parsing)
-        entities = file_data.splitlines()
-
-        # Loop through the entities (e.g., company names)
-        search_results = []
-        for entity in entities:
-            search_query = query.format(entity=entity)
-            search_results.append(fetch_search_results(search_query))
-
-        # Process the search results with Gemini API
+        entities = data[selected_column].dropna().unique()  # Remove duplicates and NaNs
         responses = []
-        for result in search_results:
-            response = generate_with_gemini(result)
-            responses.append(response)
 
+        query_template_new = gemini_generate_web_query(query_template)
+        print(f"Formatted query by gemini: {query_template_new}")
+        
+        for i, entity in enumerate(entities):
+            print(f"Processing entity: {entity}")
+            entity = str(entity).strip()
+            formatted_query = query_template_new.replace("{entity}", entity)
+            print(f"Formatted query: {formatted_query}")
+            search_results = fetch_web_results(formatted_query)
+            print(f"Search results: {search_results}")
+            if isinstance(search_results, dict) and "error" in search_results:
+                responses.append({"entity": entity, "error": search_results["error"]})
+            else:
+                gemini_response = generate_with_gemini(search_results)
+                responses.append({"entity": entity, **gemini_response})
+            if(i>26):
+                break
+            
         return jsonify({"responses": responses})
-
-    except RequestException as e:
-        return jsonify({"error": f"Network error: {str(e)}"}), 503
 
     except Exception as e:
         return jsonify({"error": f"An error occurred: {str(e)}"}), 500
 
 
-def fetch_search_results(query):
-    """Fetch search results using SerpAPI and filter them"""
-    params = {
-        'q': query,
-        'api_key': SERPAPI_KEY,
-        'engine': 'google',
+def fetch_web_results(query):
+    USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.107 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.3 Safari/605.1.15",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0"
+    ]
+    search_url = f"https://www.google.com/search?q={query.replace(' ', '+')}"
+    headers = {
+        "User-Agent": random.choice(USER_AGENTS)
     }
+
     try:
-        response = requests.get(SERPAPI_URL, params=params)
-        response.raise_for_status()  # Raise an error for bad status codes
-        results = response.json().get('organic_results', [])
-        filtered_results = filter_search_results(results)
-        return filtered_results
-    except requests.exceptions.RequestException as e:
-        return {"error": f"Error fetching search results: {str(e)}"}
+        response = requests.get(search_url, headers=headers)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, "html.parser")
+        results = []
+        for g in soup.find_all("div", class_="tF2Cxc"):
+            title = g.find("h3").text if g.find("h3") else "No Title"
+            snippet = g.find("span", class_="aCOpRe").text if g.find("span", class_="aCOpRe") else "No Snippet"
+            link = g.find("a")["href"] if g.find("a") else "No Link"
+            results.append({"title": title, "snippet": snippet, "link": link})
+        time.sleep(random.uniform(5, 10))  # Increase delay to avoid rate limiting
+        return results
+    except Exception as e:
+        return {"error": f"Failed to fetch web results: {str(e)}"}
 
-
-def filter_search_results(results):
-    """Filter and clean up search results"""
-    filtered = []
-    for result in results:
-        title = result.get("title", "")
-        snippet = result.get("snippet", "")
-        link = result.get("link", "")
-        
-        # Only add results with a valid URL and relevant content
-        if link and snippet:
-            filtered.append({
-                "title": title,
-                "snippet": snippet,
-                "url": link
-            })
-    return filtered
-
-
-def generate_with_gemini(search_results):
-    """Generate content using Gemini API and process extracted data"""
+def gemini_generate_web_query(query):
     try:
-        # Combine the search results into a readable prompt for Gemini
-        results_text = "\n".join([f"Title: {r['title']}\nSnippet: {r['snippet']}\nURL: {r['url']}" for r in search_results])
-
-        # Structure the prompt to instruct Gemini on extracting data like emails or phone numbers
-        prompt = f"Extract the following information from the search results:\n{results_text}\n\nInformation to extract: email addresses, phone numbers, and other contact information."
+        prompt = """Format the following text  query for a google websearch by beautiful soup to extract information. Keep the response concise. and add a {entity} in each query to be replaced later.
+        Example: input: "find the ceo" 
+        output: "who is the ceo of {entity}"
+        only give the output as a reply and nothing else, add formatting to make the google search query more effective.
+        The input query is:\n"""
+        prompt += query
 
         model = genai.GenerativeModel("gemini-1.5-flash")
-        response = model.generate_content(prompt)
-        
-        # Here we can use regular expressions to process the raw text further
-        extracted_info = extract_contact_info(response.text)
-
-        return extracted_info
+        gemini_response = model.generate_content(prompt)
+        return gemini_response.text.split("\n")[0].strip()
+    
     except Exception as e:
-        return f"Error processing with Gemini: {str(e)}"
+        return {"error": f"Gemini processing error: {str(e)}"}
+    
+def generate_with_gemini(search_results):
+    try:
+        # Format prompt for Gemini
+        prompt = "Extract useful information from the following results, in a tabular form\n"
+        for result in search_results:
+            prompt += f"Title: {result['title']}\nSnippet: {result['snippet']}\nURL: {result['link']}\n\n"
+
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        gemini_response = model.generate_content(prompt)
+        # return {"emails": extract_emails(gemini_response.text), 
+        #         "phone_numbers": extract_phone_numbers(gemini_response.text), 
+        #         "additional_info": gemini_response.text}
+        return {"info": gemini_response.text}
+    except Exception as e:
+        return {"error": f"Gemini processing error: {str(e)}"}
 
 
-def extract_contact_info(text):
-    """Use regex to extract email addresses and phone numbers from text"""
-    emails = re.findall(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", text)
-    phone_numbers = re.findall(r"\+?\(?\d{1,4}\)?[-.\s]?\d{1,4}[-.\s]?\d{1,4}[-.\s]?\d{1,9}", text)
+def extract_emails(text):
+    return re.findall(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", text)
 
-    return {
-        "emails": emails,
-        "phone_numbers": phone_numbers
-    }
+
+def extract_phone_numbers(text):
+    return re.findall(r"\+?\d{1,4}[-.\s]?\d{1,4}[-.\s]?\d{1,4}[-.\s]?\d{1,9}", text)
+
 
 if __name__ == "__main__":
     app.run(debug=True)
