@@ -1,4 +1,6 @@
-![ai-agent-logo](logo192.png)
+<p align="center">
+  <img src="logo192.png" alt="ai-agent-logo">
+</p>
 
 # AI Based Web-Scraping Agent
 
