@@ -93,6 +93,10 @@ This project is an AI-based web-scraping agent designed to extract data from var
    npm start
    ```
 
+### Testing
+
+you may use the provided testing.csv and a prompt like: "what is the annual incomome of these companies" to test the application. The application will scrape the data from the provided csv file and display the results on the frontend.
+
 ## Additional Information
 
 - **Documentation**: Detailed documentation is available in the `docs` directory.
