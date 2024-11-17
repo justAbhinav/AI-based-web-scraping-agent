@@ -42,7 +42,7 @@ def process_request():
         print(f"Formatted query by gemini: {query_template_new}")
         
         for i, entity in enumerate(entities):
-            if(i>=1):
+            if(i>=26):
                 break
             print(f"Processing entity: {entity} {i}")
             entity = str(entity).strip()
