@@ -15,6 +15,8 @@ This project is an AI-based web-scraping agent designed to extract data from var
 - **Scalability**: Designed to handle large-scale web scraping tasks.
 - **Customizable**: Easily configurable to target different websites and data points.
 - **Environment Management**: Utilizes environment variables for secure API key management.
+- **CSV Data Handling**: Supports scraping data from CSV files.
+- **Enhanced Error Handling**: Improved error handling and logging mechanisms.
 
 ## Applications
 
@@ -85,7 +87,8 @@ This project is an AI-based web-scraping agent designed to extract data from var
    Create a `.env` file in the `frontend` directory and add your environment variables:
 
    ```env
-   none here
+   REACT_APP_GOOGLE_CLIENT_ID=your-google-client-id
+   REACT_APP_GOOGLE_API_KEY=your-google-api-key
    ```
 
 4. **Run the Frontend Server**:
@@ -95,7 +98,7 @@ This project is an AI-based web-scraping agent designed to extract data from var
 
 ### Testing
 
-you may use the provided testing.csv and a prompt like: "what is the annual incomome of these companies" to test the application. The application will scrape the data from the provided csv file and display the results on the frontend.
+You may use the provided `testing.csv` and a prompt like: "What is the annual income of these companies?" to test the application. The application will scrape the data from the provided CSV file and display the results on the frontend.
 
 ## Additional Information
 

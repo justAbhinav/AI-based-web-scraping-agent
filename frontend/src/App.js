@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import axios from "axios";
 import Papa from "papaparse";
 import {
@@ -15,9 +15,10 @@ import {
   Button,
   Divider,
 } from "@mui/material";
+import { gapi } from "gapi-script";
 import DownloadIcon from "@mui/icons-material/Download";
 import FileDisplay from "./fileDisplay";
-import Footer from './footer';
+import Footer from "./footer";
 import "./App.css";
 
 function App() {
@@ -31,6 +32,84 @@ function App() {
   const [uploadStatus, setUploadStatus] = useState("");
   const [fileContent, setFileContent] = useState([]);
   const [loading, setLoading] = useState(false);
+
+  const CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID;
+  const API_KEY = process.env.REACT_APP_GOOGLE_API_KEY;
+  const SCOPES = "https://www.googleapis.com/auth/drive.readonly";
+
+  useEffect(() => {
+    function start() {
+      gapi.client.init({
+        apiKey: API_KEY,
+        clientId: CLIENT_ID,
+        scope: SCOPES,
+      });
+    }
+    gapi.load("client:auth2", start);
+  }, []);
+
+  const handleDriveUpload = async () => {
+    try {
+      // Initialize Google Auth
+      const authInstance = gapi.auth2.getAuthInstance();
+      await authInstance.signIn();
+
+      // Get OAuth token
+      const googleUser = authInstance.currentUser.get();
+      const token = googleUser.getAuthResponse().access_token;
+
+      // Ensure Picker API is loaded
+      gapi.load("picker", () => {
+        const picker = new window.google.picker.PickerBuilder()
+          .setOAuthToken(token)
+          .addView(new window.google.picker.DocsView().setIncludeFolders(false))
+          .setCallback(async (data) => {
+            if (data.action === "picked") {
+              const fileId = data.docs[0].id;
+              const fileName = data.docs[0].name;
+
+              // Fetch the file content
+              const response = await fetch(
+                `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+                { headers: { Authorization: `Bearer ${token}` } }
+              );
+              const csvData = await response.text();
+
+              // Parse CSV data
+              Papa.parse(csvData, {
+                header: true,
+                skipEmptyLines: true,
+                complete: (results) => {
+                  if (results.data && results.meta.fields) {
+                    setFile({ name: fileName });
+                    setColumns(results.meta.fields);
+                    setFileContent(results.data);
+                    setUploadStatus(
+                      "Uploaded successfully ✔ from Google Drive"
+                    );
+                    setUploadError("");
+                  } else {
+                    setUploadError(
+                      "Failed to parse the file. Ensure it's a valid CSV."
+                    );
+                  }
+                },
+                error: (error) => {
+                  setUploadError("Error reading the file: " + error.message);
+                },
+              });
+            } else if (data.action === "cancel") {
+              setUploadError("File selection canceled by user.");
+            }
+          })
+          .build();
+        picker.setVisible(true);
+      });
+    } catch (error) {
+      console.error("Error with Google Drive upload:", error);
+      setUploadError("Failed to access Google Drive. Please try again.");
+    }
+  };
 
   const handleFileChange = (event) => {
     const uploadedFile = event.target.files[0];
@@ -150,281 +229,292 @@ function App() {
 
   return (
     <>
-    <div className="app-wrapper" >
-      <Container maxWidth="lg">
-        <Box sx={{ my: 5 }}>
-          <div className="App">
-            <Typography
-              variant="h3"
-              align="center"
-              paddingBottom={"0.5rem"}
-              fontWeight={"bold"}
-            >
-              AI Agent based data processing
-            </Typography>
-            <Typography variant="body2" align="center" paddingBottom={"1rem"}>
-              Explore the net and extract information all this just by a CSV
-              file and a prompt
-            </Typography>
-          </div>
-        </Box>
-      </Container>
-
-      {/* Upload file section */}
-      <Container maxWidth="sm">
-        <Box sx={{ my: 5 }}>
-          <div className="container">
-            <h1>Please upload a CSV file</h1>
-            <input
-              type="file"
-              accept=".csv"
-              onChange={handleFileChange}
-              style={{ display: "none" }}
-              id="upload-file"
-            />
-            <label htmlFor="upload-file">
-              <button
-                className="upload-button"
-                onClick={() => document.getElementById("upload-file").click()}
-              >
-                Browse File
-              </button>
-            </label>
-            {uploadStatus && <p>{uploadStatus}</p>}
-            {uploadError && <p style={{ color: "red" }}>{uploadError}</p>}
-          </div>
-        </Box>
-      </Container>
-
-      <div className="file-content-container-div">
+      <div className="app-wrapper">
         <Container maxWidth="lg">
-          {fileContent.length > 0 && (
-            <div>
-              <Divider
-                variant="middle"
-                sx={{
-                  borderColor: "whitesmoke",
-                  borderWidth: "2px",
-                  opacity: "0.5",
-                }}
-              />
+          <Box sx={{ my: 5 }}>
+            <div className="App">
               <Typography
-                variant="h8"
-                component="h3"
+                variant="h3"
                 align="center"
-                fontFamily={"Montserrat"}
-                marginTop={"1rem"}
+                paddingBottom={"0.5rem"}
+                fontWeight={"bold"}
               >
-                Uploaded file: {file.name}
+                AI Agent based data processing
               </Typography>
-              <Typography
-                variant="body2"
-                component="data"
-                align="center"
-                fontFamily={"Montserrat"}
-              >
-                Number of rows: {fileContent.length}
-                <Tab />
-                Number of columns: {columns.length}
+              <Typography variant="body2" align="center" paddingBottom={"1rem"}>
+                Explore the net and extract information all this just by a CSV
+                file and a prompt
               </Typography>
-              <Typography
-                variant="h8"
-                component="h3"
-                align="center"
-                fontFamily={"Montserrat"}
-              >
-                File Content
-              </Typography>
-              <div className="file-content-table-view">
-                <FileDisplay content={fileContent} />
-              </div>
             </div>
-          )}
+          </Box>
         </Container>
-      </div>
 
-      {columns.length > 0 && (
-        <form onSubmit={handleSubmit}>
-          <Divider
-            variant="middle"
-            sx={{
-              borderColor: "whitesmoke",
-              borderWidth: "1px",
-              opacity: "0.3",
-              marginBottom: "1.5rem",
-            }}
-          />
-          <Container maxWidth="sm" className="container_process_req">
-            <Box sx={{ my: 2 }}>
-              <FormControl>
-                <InputLabel
-                  id="select-column-label"
-                  sx={{
-                    color: "whitesmoke",
-                    width: "fit-content",
-                    backgroundColor: "#1e1e1e",
-                    paddingX: "0.5rem",
-                  }}
+        {/* Upload file section */}
+        <Container maxWidth="sm">
+          <Box sx={{ my: 5 }}>
+            <div className="container">
+              <h1>Please upload a CSV file</h1>
+              <input
+                type="file"
+                accept=".csv"
+                onChange={handleFileChange}
+                style={{ display: "none" }}
+                id="upload-file"
+              />
+              <label htmlFor="upload-file">
+                <button
+                  className="upload-button"
+                  onClick={() => document.getElementById("upload-file").click()}
                 >
-                  Select main Column
-                </InputLabel>
-                <Select
-                  labelId="select-column-label"
-                  id="select-main-column"
-                  value={selectedColumn}
-                  label="Select a Column"
-                  onChange={handleColumnChange}
-                  sx={{
-                    color: "whitesmoke",
-                    width: "15rem",
-                    marginBottom: "1rem",
-                    "& .MuiInputLabel-root": {
-                      color: "whitesmoke", // Change the color of the label
-                    },
-                    "& .MuiOutlinedInput-notchedOutline": {
-                      borderColor: "whitesmoke", // Change the border color
-                    },
-                    "&:hover .MuiOutlinedInput-notchedOutline": {
-                      borderColor: "whitesmoke", // Change the border color on hover
-                    },
-                    "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
-                      borderColor: "whitesmoke", // Change the border color when focused
-                    },
-                    "&": {
-                      borderColor: "whitesmoke", // Change the border color when focused
-                    },
-                  }}
-                  disabled={loading}
-                >
-                  {columns.map((col, index) => (
-                    <MenuItem key={index} value={col}>
-                      {col}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
+                  Browse a local File
+                </button>
+              </label>
+              <Typography variant="button" sx={{ marginBottom: "0.5rem" }}>
+                OR
+              </Typography>
+              <Button
+                variant="contained"
+                className="google-upload-button"
+                onClick={handleDriveUpload}
+              >
+                Upload from Google Drive
+              </Button>
 
-              <div className="query-box">
-                <InputLabel
-                  id="query-label"
-                  sx={{
-                    color: "whitesmoke",
-                    width: "fit-content",
-                    marginBottom: "0.5rem",
-                    fontSize: "1.2rem",
-                    fontFamily: "Montserrat",
-                  }}
-                >
-                  Please enter your query
-                </InputLabel>
+              {uploadStatus && <p>{uploadStatus}</p>}
+              {uploadError && <p style={{ color: "red" }}>{uploadError}</p>}
+            </div>
+          </Box>
+        </Container>
 
-                <TextField
-                  id="input-query-box"
-                  label="type your query here"
-                  variant="outlined"
-                  value={query}
-                  onChange={handleQueryChange}
-                  multiline
-                  InputLabelProps={{
-                    style: { color: "whitesmoke" },
-                  }}
+        <div className="file-content-container-div">
+          <Container maxWidth="lg">
+            {fileContent.length > 0 && (
+              <div>
+                <Divider
+                  variant="middle"
                   sx={{
-                    width: "100%",
-                    "& .MuiOutlinedInput-root": {
-                      "& fieldset": {
+                    borderColor: "whitesmoke",
+                    borderWidth: "2px",
+                    opacity: "0.5",
+                  }}
+                />
+                <Typography
+                  variant="h8"
+                  component="h3"
+                  align="center"
+                  fontFamily={"Montserrat"}
+                  marginTop={"1rem"}
+                >
+                  Uploaded file: {file.name}
+                </Typography>
+                <Typography
+                  variant="body2"
+                  component="data"
+                  align="center"
+                  fontFamily={"Montserrat"}
+                >
+                  Number of rows: {fileContent.length}
+                  <Tab />
+                  Number of columns: {columns.length}
+                </Typography>
+                <Typography
+                  variant="h8"
+                  component="h3"
+                  align="center"
+                  fontFamily={"Montserrat"}
+                >
+                  File Content
+                </Typography>
+                <div className="file-content-table-view">
+                  <FileDisplay content={fileContent} />
+                </div>
+              </div>
+            )}
+          </Container>
+        </div>
+
+        {columns.length > 0 && (
+          <form onSubmit={handleSubmit}>
+            <Divider
+              variant="middle"
+              sx={{
+                borderColor: "whitesmoke",
+                borderWidth: "1px",
+                opacity: "0.3",
+                marginBottom: "1.5rem",
+              }}
+            />
+            <Container maxWidth="sm" className="container_process_req">
+              <Box sx={{ my: 2 }}>
+                <FormControl>
+                  <InputLabel
+                    id="select-column-label"
+                    sx={{
+                      color: "whitesmoke",
+                      width: "fit-content",
+                      backgroundColor: "#1e1e1e",
+                      paddingX: "0.5rem",
+                    }}
+                  >
+                    Select main Column
+                  </InputLabel>
+                  <Select
+                    labelId="select-column-label"
+                    id="select-main-column"
+                    value={selectedColumn}
+                    label="Select a Column"
+                    onChange={handleColumnChange}
+                    sx={{
+                      color: "whitesmoke",
+                      width: "15rem",
+                      marginBottom: "1rem",
+                      "& .MuiInputLabel-root": {
+                        color: "whitesmoke", // Change the color of the label
+                      },
+                      "& .MuiOutlinedInput-notchedOutline": {
                         borderColor: "whitesmoke", // Change the border color
                       },
-                      "&:hover fieldset": {
+                      "&:hover .MuiOutlinedInput-notchedOutline": {
                         borderColor: "whitesmoke", // Change the border color on hover
                       },
-                      "&.Mui-focused fieldset": {
+                      "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
                         borderColor: "whitesmoke", // Change the border color when focused
                       },
                       "&": {
-                        color: "whitesmoke", // Change the text color
+                        borderColor: "whitesmoke", // Change the border color when focused
                       },
-                    },
-                  }}
-                  disabled={loading}
-                />
-                <FormHelperText
-                  sx={{ color: "whitesmoke", marginBottom: "1rem" }}
-                >
-                  e.g. What is the ceo of the companies
-                </FormHelperText>
-              </div>
-              {fileContent.length > 26 && (
-                <Typography
-                  variant="body2"
-                  component="p"
-                  align="center"
-                  color="error"
-                  fontFamily={"Montserrat"}
-                  marginBottom={"1rem"}
-                >
-                  Due to rate limitations, only the first 25 entries will be
-                  processed.
-                </Typography>
-              )}
-              <button
-                type="submit"
-                className="upload-button"
-                disabled={loading}
-              >
-                Process
-              </button>
+                    }}
+                    disabled={loading}
+                  >
+                    {columns.map((col, index) => (
+                      <MenuItem key={index} value={col}>
+                        {col}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
 
-              {error && (
-                <div className="error" style={{ color: "red" }}>
-                  {error}
+                <div className="query-box">
+                  <InputLabel
+                    id="query-label"
+                    sx={{
+                      color: "whitesmoke",
+                      width: "fit-content",
+                      marginBottom: "0.5rem",
+                      fontSize: "1.2rem",
+                      fontFamily: "Montserrat",
+                    }}
+                  >
+                    Please enter your query
+                  </InputLabel>
+
+                  <TextField
+                    id="input-query-box"
+                    label="type your query here"
+                    variant="outlined"
+                    value={query}
+                    onChange={handleQueryChange}
+                    multiline
+                    InputLabelProps={{
+                      style: { color: "whitesmoke" },
+                    }}
+                    sx={{
+                      width: "100%",
+                      "& .MuiOutlinedInput-root": {
+                        "& fieldset": {
+                          borderColor: "whitesmoke", // Change the border color
+                        },
+                        "&:hover fieldset": {
+                          borderColor: "whitesmoke", // Change the border color on hover
+                        },
+                        "&.Mui-focused fieldset": {
+                          borderColor: "whitesmoke", // Change the border color when focused
+                        },
+                        "&": {
+                          color: "whitesmoke", // Change the text color
+                        },
+                      },
+                    }}
+                    disabled={loading}
+                  />
+                  <FormHelperText
+                    sx={{ color: "whitesmoke", marginBottom: "1rem" }}
+                  >
+                    e.g. What is the ceo of the companies
+                  </FormHelperText>
                 </div>
-              )}
-            </Box>
-          </Container>
-        </form>
-      )}
+                {fileContent.length > 26 && (
+                  <Typography
+                    variant="body2"
+                    component="p"
+                    align="center"
+                    color="error"
+                    fontFamily={"Montserrat"}
+                    marginBottom={"1rem"}
+                  >
+                    Due to rate limitations, only the first 25 entries will be
+                    processed.
+                  </Typography>
+                )}
+                <button
+                  type="submit"
+                  className="upload-button"
+                  disabled={loading}
+                >
+                  Process
+                </button>
 
-      <Divider
-        variant="middle"
-        sx={{
-          borderColor: "whitesmoke",
-          borderWidth: "2px",
-          opacity: "0.5",
-          marginBottom: "0.5rem",
-          marginTop: "2.5rem",
-        }}
-      />
-
-      <div className="Result-display">
-        {results.length > 0 && (
-          <div className="">
-            <h3>Results:</h3>
-            {results.map((result, index) => (
-              <div key={index}>
-                <h4>
-                  Entity {index + 1}: {result.entity || "N/A"}
-                </h4>
-                <p>
-                  <strong>Extracted Information: </strong>{" "}
-                  {result.info || "N/A"}
-                </p>
-              </div>
-            ))}
-            <Button
-              className="download-button"
-              size="small"
-              variant="contained"
-              startIcon={<DownloadIcon />}
-              onClick={downloadCSV}
-            >
-              Download this Data
-            </Button>
-          </div>
+                {error && (
+                  <div className="error" style={{ color: "red" }}>
+                    {error}
+                  </div>
+                )}
+              </Box>
+            </Container>
+          </form>
         )}
+
+        <Divider
+          variant="middle"
+          sx={{
+            borderColor: "whitesmoke",
+            borderWidth: "2px",
+            opacity: "0.5",
+            marginBottom: "0.5rem",
+            marginTop: "2.5rem",
+          }}
+        />
+
+        <div className="Result-display">
+          {results.length > 0 && (
+            <div className="">
+              <h3>Results:</h3>
+              {results.map((result, index) => (
+                <div key={index}>
+                  <h4>
+                    Entity {index + 1}: {result.entity || "N/A"}
+                  </h4>
+                  <p>
+                    <strong>Extracted Information: </strong>{" "}
+                    {result.info || "N/A"}
+                  </p>
+                </div>
+              ))}
+              <Button
+                className="download-button"
+                size="small"
+                variant="contained"
+                startIcon={<DownloadIcon />}
+                onClick={downloadCSV}
+              >
+                Download this Data
+              </Button>
+            </div>
+          )}
+        </div>
       </div>
-    </div>
-          <Footer/>
-          </>
+      <Footer />
+    </>
   );
 }
 
